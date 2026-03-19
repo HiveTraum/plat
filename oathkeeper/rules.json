@@ -1,0 +1,28 @@
+[
+  {
+    "id": "api-public",
+    "match": {
+      "url": "http://api.plat.ru/api/health",
+      "methods": ["GET"]
+    },
+    "authenticators": [{ "handler": "anonymous" }],
+    "authorizer": { "handler": "allow" },
+    "mutators": [{ "handler": "noop" }],
+    "upstream": {
+      "url": "http://backend:8080"
+    }
+  },
+  {
+    "id": "api-protected",
+    "match": {
+      "url": "http://api.plat.ru/api/<**>",
+      "methods": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+    },
+    "authenticators": [{ "handler": "cookie_session" }],
+    "authorizer": { "handler": "allow" },
+    "mutators": [{ "handler": "header" }],
+    "upstream": {
+      "url": "http://backend:8080"
+    }
+  }
+]

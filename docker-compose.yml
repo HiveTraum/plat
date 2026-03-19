@@ -1,0 +1,88 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: plat
+      POSTGRES_PASSWORD: plat
+      POSTGRES_DB: plat
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U plat"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  kratos-init-db:
+    build:
+      context: ./kratos
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: plat
+      POSTGRES_PASSWORD: plat
+      POSTGRES_DB: plat
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  kratos-migrate:
+    image: oryd/kratos:v1.3.1
+    command: migrate sql -e --yes
+    environment:
+      DSN: postgres://plat:plat@postgres:5432/kratos?sslmode=disable
+    depends_on:
+      kratos-init-db:
+        condition: service_completed_successfully
+
+  kratos:
+    image: oryd/kratos:v1.3.1
+    command: serve -c /etc/config/kratos/kratos.yml --dev --watch-courier
+    volumes:
+      - ./kratos:/etc/config/kratos
+    environment:
+      DSN: postgres://plat:plat@postgres:5432/kratos?sslmode=disable
+    ports:
+      - "4433:4433"
+      - "4434:4434"
+    depends_on:
+      kratos-migrate:
+        condition: service_completed_successfully
+
+  oathkeeper:
+    image: oryd/oathkeeper:v0.40.8
+    command: serve -c /etc/config/oathkeeper/oathkeeper.yml
+    volumes:
+      - ./oathkeeper:/etc/config/oathkeeper
+    ports:
+      - "4455:4455"
+      - "4456:4456"
+    depends_on:
+      - kratos
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgres://plat:plat@postgres:5432/plat?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    depends_on:
+      - backend
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - oathkeeper
+      - frontend
+
+volumes:
+  postgres_data:
