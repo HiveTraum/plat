@@ -11,7 +11,6 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/danielgtaylor/huma/v2/humacli"
 	"github.com/jackc/pgx/v5/pgxpool"
-	ory "github.com/ory/client-go"
 )
 
 type Options struct {
@@ -19,8 +18,7 @@ type Options struct {
 }
 
 type App struct {
-	DB     *pgxpool.Pool
-	Kratos *ory.APIClient
+	DB *pgxpool.Pool
 }
 
 func NewApp() (*App, error) {
@@ -38,19 +36,7 @@ func NewApp() (*App, error) {
 		return nil, fmt.Errorf("unable to ping database: %w", err)
 	}
 
-	kratosURL := os.Getenv("KRATOS_PUBLIC_URL")
-	if kratosURL == "" {
-		kratosURL = "http://localhost:4433"
-	}
-
-	kratosConfig := ory.NewConfiguration()
-	kratosConfig.Servers = ory.ServerConfigurations{{URL: kratosURL}}
-	kratosClient := ory.NewAPIClient(kratosConfig)
-
-	return &App{
-		DB:     pool,
-		Kratos: kratosClient,
-	}, nil
+	return &App{DB: pool}, nil
 }
 
 type HealthOutput struct {
@@ -61,7 +47,7 @@ type HealthOutput struct {
 
 type UserOutput struct {
 	Body struct {
-		ID    string `json:"id" doc:"User ID from Kratos"`
+		ID    string `json:"id" doc:"User ID"`
 		Email string `json:"email" doc:"User email"`
 	}
 }
@@ -87,23 +73,12 @@ func main() {
 		})
 
 		huma.Get(api, "/api/me", func(ctx context.Context, input *struct {
-			Cookie string `header:"Cookie" doc:"Session cookie"`
+			UserID    string `header:"X-User-Id" required:"true" doc:"User ID from Oathkeeper"`
+			UserEmail string `header:"X-User-Email" required:"true" doc:"User email from Oathkeeper"`
 		}) (*UserOutput, error) {
-			session, _, err := app.Kratos.FrontendAPI.ToSession(ctx).Cookie(input.Cookie).Execute()
-			if err != nil {
-				return nil, huma.Error401Unauthorized("unauthorized")
-			}
-
-			identity := session.Identity
 			resp := &UserOutput{}
-			resp.Body.ID = identity.Id
-
-			if traits, ok := identity.Traits.(map[string]interface{}); ok {
-				if email, ok := traits["email"].(string); ok {
-					resp.Body.Email = email
-				}
-			}
-
+			resp.Body.ID = input.UserID
+			resp.Body.Email = input.UserEmail
 			return resp, nil
 		})
 
